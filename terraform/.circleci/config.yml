@@ -1,0 +1,188 @@
+version: 2.1
+
+default_config: &default
+  docker:
+    - image: hashicorp/terraform:light
+  working_directory: ~/repo
+
+commands:
+  init:
+    description: "terraform init"
+    parameters:
+      env:
+        type: string
+        default: "dev"
+    steps:
+      - run:
+          name: terraform init - << parameters.env >>
+          command: make ENV=<< parameters.env >> initall
+  plan:
+    description: "terraform plan"
+    parameters:
+      env:
+        type: string
+        default: "dev"
+    steps:
+      - run:
+          name: terraform plan - << parameters.env >>
+          command: make ENV=<< parameters.env >> planall
+  apply:
+    description: "terraform apply"
+    parameters:
+      env:
+        type: string
+        default: "dev"
+    steps:
+      - run:
+          name: terraform apply - << parameters.env >>
+          command: make ENV=<< parameters.env >> applyall
+
+jobs:
+  fmt:
+    <<: *default
+    steps:
+      - checkout
+      - run:
+          name: Install make
+          command: apk add --update make
+      - run:
+          name: terraform fmt
+          command: |
+            if [ $(terraform fmt | grep -v .terraform | tee fmt.txt | wc -l) -gt 0 ]; then
+              echo -e "Please run terraform fmt\n\n"
+              cat fmt.txt
+              exit 1
+            fi
+
+  test:
+    <<: *default
+    steps:
+      - checkout
+      - run:
+          name: Install make
+          command: apk add --update make
+      - init:
+          env: root
+      - plan:
+          env: root
+      - init:
+          env: security
+      - plan:
+          env: security
+      - init:
+          env: dev
+      - plan:
+          env: dev
+      - init:
+          env: preprod
+      - plan:
+          env: preprod
+      - init:
+          env: prod
+      - plan:
+          env: prod
+
+  root:
+    <<: *default
+    steps:
+      - checkout
+      - run:
+          name: Install make
+          command: apk add --update make
+      - init:
+          env: root
+      - apply:
+          env: root
+
+  security:
+    <<: *default
+    steps:
+      - checkout
+      - run:
+          name: Install make
+          command: apk add --update make
+      - init:
+          env: security
+      - apply:
+          env: security
+
+  dev:
+    <<: *default
+    steps:
+      - checkout
+      - run:
+          name: Install make
+          command: apk add --update make
+      - init:
+          env: dev
+      - apply:
+          env: dev
+
+  preprod:
+    <<: *default
+    steps:
+      - checkout
+      - run:
+          name: Install make
+          command: apk add --update make
+      - init:
+          env: preprod
+      - apply:
+          env: preprod
+
+  prod:
+    <<: *default
+    steps:
+      - checkout
+      - run:
+          name: Install make
+          command: apk add --update make
+      - init:
+          env: prod
+      - apply:
+          env: prod
+
+workflows:
+  version: 2
+  terraform:
+    jobs:
+      - fmt
+      - test:
+          requires:
+            - fmt
+          context: aws
+      - root:
+          requires:
+            - test
+          filters:
+            branches:
+              only: master
+          context: aws
+      - security:
+          requires:
+            - root
+          filters:
+            branches:
+              only: master
+          context: aws
+      - dev:
+          requires:
+            - security
+          filters:
+            branches:
+              only: master
+          context: aws
+      - preprod:
+          requires:
+            - dev
+          filters:
+            branches:
+              only: master
+          context: aws
+      - prod:
+          requires:
+            - preprod
+          filters:
+            branches:
+              only: master
+          context: aws

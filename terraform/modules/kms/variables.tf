@@ -1,0 +1,3 @@
+variable "env" {}
+
+variable "policy" {}

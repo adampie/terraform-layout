@@ -1,0 +1,119 @@
+version: 2.1
+
+default_config: &default
+  docker:
+    - image: hashicorp/terraform:light
+  working_directory: ~/repo
+
+commands:
+  init:
+    description: "terraform init"
+    parameters:
+      env:
+        type: string
+        default: "dev"
+    steps:
+      - run: 
+          name: terraform init
+          command: terraform init -backend-config=vars/backend-<< parameters.env >>.tfvars -var-file=vars/<< parameters.env >>.tfvars
+  plan:
+    description: "terraform plan"
+    parameters:
+      env:
+        type: string
+        default: "dev"
+    steps:
+      - run: 
+          name: terraform plan
+          command: terraform plan -var-file=vars/backend-<< parameters.env >>.tfvars -var-file=vars/<< parameters.env >>.tfvars
+  apply:
+    description: "terraform apply"
+    parameters:
+      env:
+        type: string
+        default: "dev"
+    steps:
+      - run:
+          name: terrafomr apply
+          command: terraform apply -auto-approve -var-file=vars/backend-<< parameters.env >>.tfvars -var-file=vars/<< parameters.env >>.tfvars
+
+jobs:
+  fmt:
+    <<: *default
+    steps:
+      - checkout
+      - run:
+          name: terraform fmt
+          command: |
+            if [ $(terraform fmt | grep -v .terraform | tee fmt.txt | wc -l) -gt 0 ]; then
+              echo -e "Please run terraform fmt\n\n"
+              cat fmt.txt
+              exit 1
+            fi
+
+  test:
+    <<: *default
+    steps:
+      - checkout
+      - init:
+          env: dev
+      - plan:
+          env: dev
+
+  dev:
+    <<: *default
+    steps:
+      - checkout
+      - init:
+          env: dev
+      - apply:
+          env: dev
+
+  preprod:
+    <<: *default
+    steps:
+      - checkout
+      - init:
+          env: preprod
+      - apply:
+          env: preprod
+
+  prod:
+    <<: *default
+    steps:
+      - checkout
+      - init:
+          env: prod
+      - apply:
+          env: prod
+
+workflows:
+  version: 2
+  terraform:
+    jobs:
+      - fmt
+      - test:
+          requires:
+            - fmt
+          context: aws
+      - dev:
+          requires:
+            - test
+          filters:
+            branches:
+              only: master
+          context: aws
+      - preprod:
+          requires:
+            - dev
+          filters:
+            branches:
+              only: master
+          context: aws
+      - prod:
+          requires:
+            - preprod
+          filters:
+            branches:
+              only: master
+          context: aws
